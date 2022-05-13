@@ -1,0 +1,16 @@
+Build.PL
+Changes
+LICENSE
+MANIFEST
+README
+lib/Game/SuperSokohire3.pm
+lib/Game/SuperSokohire3.xs
+lib/Game/SuperSokohire3/Common.pm
+lib/Game/SuperSokohire3/Constants.pm
+lib/Game/SuperSokohire3/Interface/Curses.pm
+lib/Game/typemap
+ppport.h
+src/jsf.c
+src/jsf.h
+t/00-load.t
+t/pod.t

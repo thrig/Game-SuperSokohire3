@@ -1,0 +1,87 @@
+#!perl
+# supersokohire3 - launcher for Game::SuperSokohire3
+#
+# $Id: supersokohire3,v 1.6 2022/05/13 03:11:32 jmates Exp $
+
+use Game::SuperSokohire3;
+use Game::SuperSokohire3::Common;
+use Game::SuperSokohire3::Interface::Curses;
+use Getopt::Long 'GetOptions';
+
+$0 = 'supersokohire3';    # some OS may not honor this
+my $delay = 0.25;         # DBG is too high
+my $seed  = time;         # https://flak.tedunangst.com/post/random-in-the-wild
+
+GetOptions(
+    'delay=f'   => \$delay,
+    'seed=i'    => \$seed,
+    'version|v' => sub { say $Game::SuperSokohire3::VERSION; exit 1 }
+) or exit 1;
+
+$seed = unpack L => pack L => $seed;    # restrict to 32-bit value
+
+if ( -t *STDERR ) {    # DBG
+    close *STDERR;
+    open *STDERR, '>', "$ENV{HOME}/tmp/log" or exit 42;
+    *STDERR->autoflush(1);
+}
+warn "-- DBG seed ", $seed, "\n";
+
+Game::SuperSokohire3->new(
+    delay_seconds => $delay,
+    io            => Game::SuperSokohire3::Interface::Curses->new,
+    seed          => $seed,
+)->run;
+
+__END__
+
+=head1 NAME
+
+B<supersokohire3>
+
+=head1 SYNOPSIS
+
+  supersokohire3 [--seed=uint32]
+
+=head1 DESCRIPTION
+
+This is a small terminal-based game.
+
+=head2 Commands
+
+Movement is like that of L<vi(1)>, though other keys may also move
+the player.
+
+      k   
+      |  
+  h - @ - l
+      |  
+      j   
+
+C<q> will quit the game.
+
+=head2 Symbols
+
+TODO
+
+=head1 EXIT STATUS
+
+B<supersokohire3> attempts to exit with a 0 status code only when the
+game is won.
+
+=head1 SEE ALSO
+
+L<Game::Xomb>
+
+=head1 AUTHOR
+
+Jeremy Mates
+
+=head1 COPYRIGHT & LICENSE
+
+Copyright 2022 Jeremy Mates, All Rights Reserved.
+
+This program is distributed under the (Revised) BSD License:
+L<https://opensource.org/licenses/BSD-3-Clause>
+
+=cut

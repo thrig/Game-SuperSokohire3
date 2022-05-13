@@ -1,0 +1,46 @@
+Super Sokohire III: The Legend of the Fall
+
+This is a small terminal-based game. Assuming that the local::lib and
+App::cpanminus modules are installed and configured,
+
+  cpanm Game::SuperSokohire3
+  supersokohire3
+
+may suffice to install and begin the game.
+
+
+INSTALLATION
+
+To install this module, run the following commands:
+
+  perl Build.PL
+  ./Build
+  ./Build test
+  ./Build install
+
+
+SUPPORT AND DOCUMENTATION
+
+After installing, you can find documentation for this module with the
+perldoc command.
+
+  perldoc Game::SuperSokohire3
+
+You can also look for information at:
+
+    CPAN Ratings
+        https://cpanratings.perl.org/d/Game-SuperSokohire3
+
+    Search CPAN
+        https://metacpan.org/release/Game-SuperSokohire3
+
+
+LICENSE AND COPYRIGHT
+
+This software is Copyright (c) 2022 by Jeremy Mates.
+
+This is free software, licensed under:
+
+  The (three-clause) BSD License
+
+$Id: README,v 1.5 2022/05/13 04:47:27 jmates Exp $
