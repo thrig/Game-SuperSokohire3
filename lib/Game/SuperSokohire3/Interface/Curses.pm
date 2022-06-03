@@ -1,10 +1,10 @@
 # -*- Perl -*-
 #
-# $Id: Curses.pm,v 1.8 2022/05/13 05:10:07 jmates Exp $
+# $Id: Curses.pm,v 1.13 2022/06/03 13:15:34 jmates Exp $
 #
 # a Curses-based interface for Game::SuperSokohire3
 
-package Game::SuperSokohire3::Interface::Curses 0.01;
+package Game::SuperSokohire3::Interface::Curses 0.02;
 use Object::Pad 0.52;
 
 class Game::SuperSokohire3::Interface::Curses;
@@ -40,7 +40,9 @@ use constant {
     SKARI_BLACK  => 19,
 };
 
-our %ch_inputs = (    # regular keyboard keys (see Curses getch docs)
+our $bosswin;
+
+our %ch_inputs = (    # regular keyboard keys (see Curses getchar docs)
     B => INPUT_BOSS,
     q => INPUT_QUIT,
     h => INPUT_MOVE_W,
@@ -60,6 +62,23 @@ has $fancy_colors = 0;
 has $map;              # WINDOW* to the $world
 has %obj2ch;           # $world object to chtype mapping
 
+# ascii(7) decimals are used to help Curses see an IV instead of a PV
+# and therefore create the correct chtype. sorry, eh?
+our %boring = (
+    OBJ_EMPTY, 46 | A_DIM, OBJ_PLAYER, 64 | A_BOLD, OBJ_THINGY, 120,
+    OBJ_WALL,  35 | A_DIM, OBJ_CELL,   95 | A_BOLD, OBJ_DOOR,   43 | A_BOLD,
+    OBJ_VOID,  32,
+);
+our %fancy = (
+    OBJ_EMPTY,  46 | COLOR_PAIR(REMEI_GREY3),
+    OBJ_PLAYER, 64 | A_BOLD | COLOR_PAIR(REMEI_GREEN),
+    OBJ_THINGY, 120 | COLOR_PAIR(REMEI_YELLOW),
+    OBJ_WALL,   35 | COLOR_PAIR(REMEI_GREY3),
+    OBJ_CELL,   95 | COLOR_PAIR(REMEI_WHITE),
+    OBJ_DOOR,   43 | COLOR_PAIR(REMEI_WHITE),
+    OBJ_VOID,   32,
+);
+
 ########################################################################
 #
 # METHODS
@@ -68,19 +87,15 @@ method init {
     initscr;
     start_color;
     if ( can_change_color and $COLORS >= 256 ) {
+        setup_curses_colors();
+        %obj2ch       = %fancy;
         $fancy_colors = 1;
-        curses_colors();
-        # ascii(7) decimals are used to help Curses see an IV instead of
-        # a PV and therefore create the correct chtype. sorry, eh?
-        @obj2ch{ OBJ_EMPTY, OBJ_PLAYER, OBJ_THINGY, OBJ_WALL } = (
-            46 | COLOR_PAIR(REMEI_GREY3),
-            90 | A_BOLD | COLOR_PAIR(REMEI_GREEN),
-            120 | COLOR_PAIR(REMEI_YELLOW),
-            35 | COLOR_PAIR(REMEI_GREY3)
-        );
     } else {
-        @obj2ch{ OBJ_EMPTY, OBJ_PLAYER, OBJ_THINGY, OBJ_WALL } =
-          ( 46 | A_DIM, 90 | A_BOLD, 120, 35 | A_DIM );
+        %obj2ch = %boring;
+    }
+    # DBG have we probably mapped everything?
+    if ( keys %obj2ch != MAX_OBJECT ) {
+        die "error: possibly unhandled objects (fancy=$fancy_colors)\n";
     }
 
     # disable window resizes: lock $COLS and $LINES to whatever is set
@@ -91,16 +106,45 @@ method init {
     curs_set(0);
     noecho;
     leaveok( $stdscr, 1 );
-    keypad(1);    # I guess some people actually use this thing
+    keypad(1);    # I guess some people actually have and use this
 
     $map = newwin( WORLD_ROWS, WORLD_COLS, 1, 1 );
     leaveok( $map, 1 );
+
+    $bosswin = newwin( $LINES, $COLS, 0, 0 );
+    move( $bosswin, 0, 0 );
+    addstring( $bosswin, <<'EOS');
+    they not speak?
+    Will not the Mayor then and his brethren come?
+  BUCKINGHAM. The Mayor is here at hand. Intend some fear;
+    Be not you spoke with but by mighty suit;
+    And look you get a prayer-book in your hand,
+    And stand between two churchmen, good my lord;
+    For on that ground I'll make a holy descant;
+    And be not easily won to our requests.
+    Play the maid's part: still answer nay, and take it.
+  GLOUCESTER. I go; and if you plead as well for them
+    As I can say nay to thee for myself,
+    No doubt we bring it to a happy issue.
+  BUCKINGHAM. Go, go, up to the leads; the Lord Mayor
+    knocks.                                      Exit GLOUCESTER
+
+           Enter the LORD MAYOR, ALDERMEN, and citizens
+
+    Welcome, my lord. I dance attendance here;
+    I think the Duke will not be spoke withal.
+
+                         Enter CATESBY
+
+    Now, Catesby, what says your lord to my request?
+EOS
+    addstring( $bosswin, ':' );
 
     return $self;
 }
 
 method input {
-    my ( $ch, $key ) = getch;
+    my ( $ch, $key ) = getchar;
     if ( defined $key ) {
         return $key_inputs{$key} // INPUT_NOOP;
     } elsif ( defined $ch ) {
@@ -112,15 +156,22 @@ method input {
 END { endwin }
 method quit { endwin }
 
-# probably not very effective in this era of creepy corporate tracking
+# I recall that some Apple //e games had a boss screen that would bring
+# up a spreadsheet or something so you could quickly look like you were
+# actually working at work. This method is perhaps less effective given
+# the creepy corporate tracking tools that are available these days.
 method boss {
-    # TODO or instead paint some other window then swap back to the game
-    # one? how does rogue do the inventory...
-    erase;
+    curs_set(1);
     nodelay(0);
-    getch;
+    refresh($bosswin);
+    getchar;
+    curs_set(0);
     nodelay(1);
-    # TODO redraw the game... call update?
+    touchwin($map);
+    touchwin;
+    noutrefresh($map);
+    noutrefresh;
+    doupdate;
     return $self;
 }
 
@@ -134,7 +185,7 @@ method title_screen {
     attroff(A_BOLD);
     emit_center( "-- Press any key --", $offset * 3 );
     attroff( COLOR_PAIR(REMEI_WHITE) ) if $fancy_colors;
-    getch;
+    getchar;
     erase;
     nodelay(1);
     return $self;
@@ -156,9 +207,14 @@ method update($game) {
 #
 # SUBROUTINES
 
+sub emit_center ( $text, $row = int( $LINES / 2 ) ) {
+    my $length = length($text) / 2;
+    addstring( $row, int( $COLS / 2 - $length ), $text );
+}
+
 # we're defining our own primary colors because who knows what the
 # terminal has the COLOR_* set to
-sub curses_colors {
+sub setup_curses_colors {
     # pallete (ncurses uses 0..1000 inclusive for the values; see
     # /usr/src/lib/libcurses/base/lib_color.c as the documentation is
     # not clear as to whether the range is inclusive)
@@ -187,11 +243,6 @@ sub curses_colors {
     # yellow for some reason actually means brown
     init_pair( REMEI_YELLOW, SKARI_YELLOW, SKARI_BLACK );
     init_pair( REMEI_GREEN,  SKARI_GREEN,  SKARI_BLACK );
-}
-
-sub emit_center ( $text, $row = int( $LINES / 2 ) ) {
-    my $length = length($text) / 2;
-    addstring( $row, int( $COLS / 2 - $length ), $text );
 }
 
 1;

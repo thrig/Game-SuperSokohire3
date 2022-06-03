@@ -1,7 +1,14 @@
 Super Sokohire III: The Legend of the Fall
 
-This is a small terminal-based game. Assuming that the local::lib and
-App::cpanminus modules are installed and configured,
+This is a small terminal-based game: can you restore the Fourth
+Algolnoid Empire through righteous statecraft? (However, it is at
+present totally not in any way developed.)
+
+
+QUICK START
+
+Assuming that the local::lib and App::cpanminus modules are installed
+and configured,
 
   cpanm Game::SuperSokohire3
   supersokohire3
@@ -11,7 +18,8 @@ may suffice to install and begin the game.
 
 INSTALLATION
 
-To install this module, run the following commands:
+To install this module, run the following commands. Build or development
+tools (a C compiler) must be installed.
 
   perl Build.PL
   ./Build
@@ -28,11 +36,11 @@ perldoc command.
 
 You can also look for information at:
 
-    CPAN Ratings
-        https://cpanratings.perl.org/d/Game-SuperSokohire3
+  CPAN Ratings
+    https://cpanratings.perl.org/d/Game-SuperSokohire3
 
-    Search CPAN
-        https://metacpan.org/release/Game-SuperSokohire3
+  Search CPAN
+    https://metacpan.org/release/Game-SuperSokohire3
 
 
 LICENSE AND COPYRIGHT
@@ -43,4 +51,4 @@ This is free software, licensed under:
 
   The (three-clause) BSD License
 
-$Id: README,v 1.5 2022/05/13 04:47:27 jmates Exp $
+$Id: README,v 1.8 2022/06/03 13:15:34 jmates Exp $

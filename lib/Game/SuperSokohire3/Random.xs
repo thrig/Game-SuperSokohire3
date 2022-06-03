@@ -1,18 +1,16 @@
-/* SuperSokohire3.xs - random number generation utility functions, etc */
+/* Random.xs - random number generation functions */
 
 #define PERL_NO_GET_CONTEXT
- 
-#include <stdint.h>
-
 #include "EXTERN.h"
 #include "perl.h"
 #include "XSUB.h"
-
 #include "ppport.h"
+
+#include <stdint.h>
 
 #include "jsf.h"
 
-MODULE = Game::SuperSokohire3		PACKAGE = Game::SuperSokohire3		
+MODULE = Game::SuperSokohire3::Random		PACKAGE = Game::SuperSokohire3::Random		
 PROTOTYPES: DISABLE
 
 # 50/50 of 0 or 1, hopefully
@@ -24,7 +22,7 @@ coinflip ()
         RETVAL
 
 # init_jsf - setup the RNG (see src/jsf.*)
-# the seed should be a 32-bit value, 
+# the seed should be a 32-bit unsigned value, 
 #   my $seed = unpack 'L', pack 'L', ...;
 #   init_jsf($seed);
 void
@@ -65,6 +63,19 @@ pick (avref)
         RETVAL = *svp;
     OUTPUT:
         RETVAL
+
+# random y,x point within some bounds
+void
+rnd_point (uint32_t ymax, uint32_t xmax)
+    PREINIT:
+        uint32_t y, x;
+    PPCODE:
+        y = ranval() % ymax;
+        x = ranval() % xmax;
+        EXTEND(SP, 2);
+        mPUSHu(y);
+        mPUSHu(x);
+        XSRETURN(2);
 
 # roll some dice and add them up
 UV

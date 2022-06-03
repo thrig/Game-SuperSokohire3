@@ -1,6 +1,6 @@
 #!perl
 #
-# $Id: 00-load.t,v 1.3 2022/05/12 22:34:01 jmates Exp $
+# $Id: 00-load.t,v 1.4 2022/06/03 12:38:54 jmates Exp $
 
 use 5.26.0;
 use Test2::V0;
@@ -8,6 +8,8 @@ use Test2::V0;
 my @modules = <<'EOM' =~ m/([A-Z][A-Za-z0-9:]+)/g;
 Game::SuperSokohire3::Constants
 Game::SuperSokohire3::Common
+Game::SuperSokohire3::Random
+Game::SuperSokohire3::Corridors
 Game::SuperSokohire3::Interface::Curses
 Game::SuperSokohire3
 EOM

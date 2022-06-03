@@ -1,8 +1,8 @@
 #!perl
 #
-# $Id: Build.PL,v 1.6 2022/05/13 03:11:27 jmates Exp $
+# $Id: Build.PL,v 1.8 2022/06/03 13:15:34 jmates Exp $
 #
-#   perldoc Module::Build
+# See the README file for how to build this module.
 
 use 5.26.0;
 use warnings;
@@ -39,7 +39,10 @@ my $builder = Module::Build->new(
         'Syntax::Keyword::Match' => '0.08',
         'Time::HiRes'            => '1.77',
     },
-    test_requires  => { 'Test2::V0' => 0, },
+    test_requires => {
+        'Data::Dumper::Concise::Aligned' => 0,    # DBG
+        'Test2::V0'                      => 0,
+    },
     add_to_cleanup => ['Game-SuperSokohire3-*'],
     auto_features  => {
         dist_authoring => {

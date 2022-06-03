@@ -1,19 +1,16 @@
 # -*- Perl -*-
 #
-# $Id: SuperSokohire3.pm,v 1.9 2022/05/13 05:31:32 jmates Exp $
+# $Id: SuperSokohire3.pm,v 1.15 2022/06/03 13:15:34 jmates Exp $
 #
-# the game logic, etc, for Game::SuperSokohire3
+# the game logic, player code, etc
 
-package Game::SuperSokohire3 0.01;
+package Game::SuperSokohire3 0.02;
 use Object::Pad 0.52;
 
 class Game::SuperSokohire3 :strict(params);
 use Game::SuperSokohire3::Common;
+use Game::SuperSokohire3::Random 'init_jsf';
 use Time::HiRes 1.77 qw(CLOCK_MONOTONIC clock_gettime sleep);
-
-# TODO shove these off into a util module? then could import that...
-require XSLoader;
-XSLoader::load;    # various RNG functions
 
 has $delay_seconds :param;
 has $io            :param;     # Interface
@@ -29,15 +26,16 @@ ADJUST {
     # TODO instead load up level maps, or procgen them...
     for my $row ( 0 .. WORLD_ROWS - 1 ) {
         for my $col ( 0 .. WORLD_COLS - 1 ) {
-            $world->[$row][$col] = 0;    # OBJ_EMPTY XXX
+            $world->[$row][$col] = OBJ_EMPTY;
         }
     }
     # DBG test test 1 2 3
     $world->[6][6]                   = OBJ_THINGY;
     $world->[7][7]                   = OBJ_WALL;
+    $world->[8][8]                   = OBJ_CELL;
+    $world->[9][9]                   = OBJ_DOOR;
     @hero                            = ( 5, 5 );
-    $world->[ $hero[0] ][ $hero[1] ] = 1;            # OBJ_PLAYER XXX
-    return $self;
+    $world->[ $hero[0] ][ $hero[1] ] = OBJ_PLAYER;
 }
 
 ########################################################################
@@ -83,7 +81,7 @@ method game_loop {
                 $direction = DIRECTION_SOUTH;
                 @newp      = ( ( $hero[0] + 1 ) % WORLD_ROWS, $hero[1] );
             }
-            case (INPUT_BOSS) { $io->boss }
+            case (INPUT_BOSS) { $io->boss; $dirty = 1 }
             case (INPUT_QUIT) { $io->quit; exit 1 }
             default           { warn "unknown input '$input' ??\n" }
         }
@@ -93,7 +91,8 @@ method game_loop {
                 $self->move( \@newp, \@hero );
                 @hero = @newp;
             }
-            # player touching objects causes them to activate
+            # player touching objects (or certain locations) causes them
+            # to activate
             $self->affect($point) if $point;
         }
         # TODO may also need a world update somewhere, maybe here
@@ -126,7 +125,9 @@ method gravity($point) {
 method move( $dst, $src ) {
     # TODO must animate the falling. notify $io somehow?
     my $obj = $world->[ $src->[0] ][ $src->[1] ];
-    $world->[ $src->[0] ][ $src->[1] ] = 0;      # OBJ_EMPTY XXX
+    # TODO need way to "put back" non-EMPTY things that yet can be
+    # walked over by monsters
+    $world->[ $src->[0] ][ $src->[1] ] = OBJ_EMPTY;
     $world->[ $dst->[0] ][ $dst->[1] ] = $obj;
     $dirty                             = 1;
 }
@@ -138,7 +139,7 @@ method move_okay( $dst, $src, $direction ) {
     my $obj = $world->[ $dst->[0] ][ $dst->[1] ];
     match( $obj : == ) {
         case (OBJ_EMPTY) { $ret = 1 }
-        case (OBJ_PLAYER), case (OBJ_WALL) { }
+        case (OBJ_PLAYER), case (OBJ_WALL), case (OBJ_DOOR), case (OBJ_CELL) { }
         case (OBJ_THINGY) {
             # can it be pushed?
             my @newp = point_to_the( $dst, $direction );
@@ -207,13 +208,8 @@ should be run from the command line.
 
 =head1 DESCRIPTION
 
-B<supersokohire3> is a small terminal-based game.
-
-TODO write more documentation
-
-=head1 AUTHOR
-
-Jeremy Mates
+Can you restore the Fourth Algolnoid Empire through righteous
+statecraft? (But the game is totally not yet playable.)
 
 =head1 COPYRIGHT & LICENSE
 
