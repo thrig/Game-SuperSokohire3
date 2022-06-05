@@ -1,6 +1,6 @@
 # -*- Perl -*-
 #
-# $Id: Common.pm,v 1.6 2022/06/02 22:08:58 jmates Exp $
+# $Id: Common.pm,v 1.7 2022/06/04 04:32:01 jmates Exp $
 #
 # commonly used modules, features, and pull in important Constants
 
@@ -12,7 +12,6 @@ our @IMPORT_MODULES = (
     'strict',
     'warnings',
     feature      => [qw(say signatures state)],
-    { 'Syntax::Keyword::Match' => 0.08 } => [qw{match :experimental(dispatch)}],
     'Game::SuperSokohire3::Constants',
     '>-warnings' => [qw(experimental::signatures)],
 );

@@ -1,8 +1,8 @@
 #!perl
 #
-# $Id: Build.PL,v 1.8 2022/06/03 13:15:34 jmates Exp $
+# $Id: Build.PL,v 1.9 2022/06/04 22:58:45 jmates Exp $
 #
-# See the README file for how to build this module.
+# see the README file for how to build this module
 
 use 5.26.0;
 use warnings;
@@ -41,6 +41,7 @@ my $builder = Module::Build->new(
     },
     test_requires => {
         'Data::Dumper::Concise::Aligned' => 0,    # DBG
+        'Scalar::Util'                   => 0,
         'Test2::V0'                      => 0,
     },
     add_to_cleanup => ['Game-SuperSokohire3-*'],

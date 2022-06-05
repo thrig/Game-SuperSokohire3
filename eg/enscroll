@@ -1,0 +1,23 @@
+#!/usr/bin/env perl
+#
+# $Id: enscroll,v 1.2 2022/06/04 01:11:43 jmates Exp $
+#
+# wizard tool...
+
+use 5.26.0;
+use warnings;
+use Game::SuperSokohire3::Scrolls;
+
+if ( @ARGV or !-t *STDIN ) {
+    while (readline) {
+        chomp;
+        my $x = Game::SuperSokohire3::Scrolls::encrypt($_);
+        # qq{"\Q$x\E",} quotes too much, this probably too little
+        $x =~ s{["\$]}{\\$1}g;
+        say qq{    "$x",};
+    }
+} else {
+    while ( defined( my $text = Game::SuperSokohire3::Scrolls::text ) ) {
+        say $text;
+    }
+}

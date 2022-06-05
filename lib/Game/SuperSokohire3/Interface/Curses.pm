@@ -1,6 +1,6 @@
 # -*- Perl -*-
 #
-# $Id: Curses.pm,v 1.13 2022/06/03 13:15:34 jmates Exp $
+# $Id: Curses.pm,v 1.17 2022/06/05 13:22:17 jmates Exp $
 #
 # a Curses-based interface for Game::SuperSokohire3
 
@@ -65,18 +65,20 @@ has %obj2ch;           # $world object to chtype mapping
 # ascii(7) decimals are used to help Curses see an IV instead of a PV
 # and therefore create the correct chtype. sorry, eh?
 our %boring = (
-    OBJ_EMPTY, 46 | A_DIM, OBJ_PLAYER, 64 | A_BOLD, OBJ_THINGY, 120,
-    OBJ_WALL,  35 | A_DIM, OBJ_CELL,   95 | A_BOLD, OBJ_DOOR,   43 | A_BOLD,
-    OBJ_VOID,  32,
+    OBJ_EMPTY, 46, OBJ_PLAYER,    64, OBJ_THINGY,  120,
+    OBJ_WALL,  35, OBJ_CELL,      95, OBJ_DOOR,    43,
+    OBJ_VOID,  32, OBJ_STAIRDOWN, 62, OBJ_STAIRUP, 60,
 );
 our %fancy = (
-    OBJ_EMPTY,  46 | COLOR_PAIR(REMEI_GREY3),
-    OBJ_PLAYER, 64 | A_BOLD | COLOR_PAIR(REMEI_GREEN),
-    OBJ_THINGY, 120 | COLOR_PAIR(REMEI_YELLOW),
-    OBJ_WALL,   35 | COLOR_PAIR(REMEI_GREY3),
-    OBJ_CELL,   95 | COLOR_PAIR(REMEI_WHITE),
-    OBJ_DOOR,   43 | COLOR_PAIR(REMEI_WHITE),
-    OBJ_VOID,   32,
+    OBJ_EMPTY,     46 | COLOR_PAIR(REMEI_GREY3),
+    OBJ_PLAYER,    64 | A_BOLD | COLOR_PAIR(REMEI_GREEN),
+    OBJ_THINGY,    120 | COLOR_PAIR(REMEI_YELLOW),
+    OBJ_WALL,      35 | COLOR_PAIR(REMEI_GREY7),
+    OBJ_CELL,      95 | COLOR_PAIR(REMEI_WHITE),
+    OBJ_DOOR,      43 | COLOR_PAIR(REMEI_WHITE),
+    OBJ_VOID,      32,    # void may need a lighter background?
+    OBJ_STAIRDOWN, 62 | COLOR_PAIR(REMEI_WHITE),
+    OBJ_STAIRUP,   60 | COLOR_PAIR(REMEI_WHITE),
 );
 
 ########################################################################
@@ -192,10 +194,10 @@ method title_screen {
 }
 
 method update($game) {
-    my $world = $game->world;
+    my $level_map = $game->level_map;
     for my $row ( 0 .. WORLD_ROWS - 1 ) {
         for my $col ( 0 .. WORLD_COLS - 1 ) {
-            my $obj = $world->[$row][$col];
+            my $obj = $level_map->[$row][$col];
             addch( $map, $row, $col, $obj2ch{$obj} // 'Q' );
         }
     }

@@ -1,6 +1,6 @@
 # -*- Perl -*-
 #
-# $Id: SuperSokohire3.pm,v 1.15 2022/06/03 13:15:34 jmates Exp $
+# $Id: SuperSokohire3.pm,v 1.18 2022/06/05 06:21:45 jmates Exp $
 #
 # the game logic, player code, etc
 
@@ -10,32 +10,43 @@ use Object::Pad 0.52;
 class Game::SuperSokohire3 :strict(params);
 use Game::SuperSokohire3::Common;
 use Game::SuperSokohire3::Random 'init_jsf';
+use Game::SuperSokohire3::World;
+use Syntax::Keyword::Match 0.08 qw(match :experimental(dispatch));
 use Time::HiRes 1.77 qw(CLOCK_MONOTONIC clock_gettime sleep);
 
 has $delay_seconds :param;
-has $io            :param;     # Interface
+has $io            :param;
 has $seed          :param;
 
 has $dirty   = 1;
 has $gravity = DIRECTION_SOUTH;
-has @hero  :reader;            # y,x coordinate for player
-has $world :reader;            # level map
+# y,x coordinate for player
+has @hero :reader;
+has $level_map :reader;
+has $world = [];
 
 ADJUST {
     init_jsf($seed);
-    # TODO instead load up level maps, or procgen them...
-    for my $row ( 0 .. WORLD_ROWS - 1 ) {
-        for my $col ( 0 .. WORLD_COLS - 1 ) {
-            $world->[$row][$col] = OBJ_EMPTY;
+    # this should happen before game_loop, and not here!
+    $world     = Game::SuperSokohire3::World::generate( $world, 1 );
+    $level_map = $world->[0];
+    if (0) {
+        for my $row ( 0 .. WORLD_ROWS - 1 ) {
+            for my $col ( 0 .. WORLD_COLS - 1 ) {
+                $level_map->[$row][$col] = OBJ_EMPTY;
+            }
         }
+        # DBG test test 1 2 3
+        $level_map->[6][6]  = OBJ_THINGY;
+        $level_map->[7][7]  = OBJ_WALL;
+        $level_map->[8][8]  = OBJ_CELL;
+        $level_map->[9][9]  = OBJ_DOOR;
+        $level_map->[9][10] = OBJ_VOID;
+        $level_map->[9][11] = OBJ_STAIRUP;
+        $level_map->[9][12] = OBJ_STAIRDOWN;
     }
-    # DBG test test 1 2 3
-    $world->[6][6]                   = OBJ_THINGY;
-    $world->[7][7]                   = OBJ_WALL;
-    $world->[8][8]                   = OBJ_CELL;
-    $world->[9][9]                   = OBJ_DOOR;
-    @hero                            = ( 5, 5 );
-    $world->[ $hero[0] ][ $hero[1] ] = OBJ_PLAYER;
+    @hero = ( 5, 5 );
+    $level_map->[ $hero[YY] ][ $hero[XX] ] = OBJ_PLAYER;
 }
 
 ########################################################################
@@ -45,15 +56,15 @@ ADJUST {
 method affect($point) {
     # fall due to gravity. objects might also activate in other ways?
     while ( defined( my $direction = $self->gravity($point) ) ) {
-        my @newp = point_to_the( $point, $direction );
-        last unless $self->fallable( \@newp );
-        $self->move( \@newp, $point );
-        $point = \@newp;
+        my @newpoint = point_to_the( $point, $direction );
+        last unless $self->fallable( \@newpoint );
+        $self->move( \@newpoint, $point );
+        $point = \@newpoint;
     }
 }
 
 method fallable($point) {
-    match( $world->[ $point->[0] ][ $point->[1] ] : == ) {
+    match( $level_map->[ $point->[YY] ][ $point->[XX] ] : == ) {
         case (OBJ_EMPTY) { 1 }
         default          { 0 }
     }
@@ -61,35 +72,35 @@ method fallable($point) {
 
 method game_loop {
     while (1) {
-        my ( $direction, @newp );
+        my ( $direction, @newpoint );
         my $input = $io->input;
         match( $input : == ) {
             case (INPUT_NOOP) { }
             case (INPUT_MOVE_E) {
                 $direction = DIRECTION_EAST;
-                @newp      = ( $hero[0], ( $hero[1] + 1 ) % WORLD_COLS );
+                @newpoint  = ( $hero[YY], ( $hero[XX] + 1 ) % WORLD_COLS );
             }
             case (INPUT_MOVE_N) {
                 $direction = DIRECTION_NORTH;
-                @newp      = ( ( $hero[0] - 1 ) % WORLD_ROWS, $hero[1] );
+                @newpoint  = ( ( $hero[YY] - 1 ) % WORLD_ROWS, $hero[XX] );
             }
             case (INPUT_MOVE_W) {
                 $direction = DIRECTION_WEST;
-                @newp      = ( $hero[0], ( $hero[1] - 1 ) % WORLD_COLS );
+                @newpoint  = ( $hero[YY], ( $hero[XX] - 1 ) % WORLD_COLS );
             }
             case (INPUT_MOVE_S) {
                 $direction = DIRECTION_SOUTH;
-                @newp      = ( ( $hero[0] + 1 ) % WORLD_ROWS, $hero[1] );
+                @newpoint  = ( ( $hero[YY] + 1 ) % WORLD_ROWS, $hero[XX] );
             }
             case (INPUT_BOSS) { $io->boss; $dirty = 1 }
             case (INPUT_QUIT) { $io->quit; exit 1 }
             default           { warn "unknown input '$input' ??\n" }
         }
-        if (@newp) {
-            my ( $ok, $point ) = $self->move_okay( \@newp, \@hero, $direction );
+        if (@newpoint) {
+            my ( $ok, $point ) = $self->move_okay( \@newpoint, \@hero, $direction );
             if ($ok) {
-                $self->move( \@newp, \@hero );
-                @hero = @newp;
+                $self->move( \@newpoint, \@hero );
+                @hero = @newpoint;
             }
             # player touching objects (or certain locations) causes them
             # to activate
@@ -107,16 +118,16 @@ method game_loop {
 method gravity($point) {
     match( $gravity : == ) {
         case (DIRECTION_EAST) {
-            $point->[1] < WORLD_COLS - 1 ? DIRECTION_EAST : undef;
+            $point->[XX] < WORLD_COLS - 1 ? DIRECTION_EAST : undef;
         }
         case (DIRECTION_NORTH) {
-            $point->[0] > 0 ? DIRECTION_NORTH : undef
+            $point->[YY] > 0 ? DIRECTION_NORTH : undef
         }
         case (DIRECTION_WEST) {
-            $point->[1] > 0 ? DIRECTION_WEST : undef;
+            $point->[XX] > 0 ? DIRECTION_WEST : undef;
         }
         case (DIRECTION_SOUTH) {
-            $point->[0] < WORLD_ROWS - 1 ? DIRECTION_SOUTH : undef;
+            $point->[YY] < WORLD_ROWS - 1 ? DIRECTION_SOUTH : undef;
         }
         default { die "unknown gravity '$gravity'" }
     }
@@ -124,31 +135,31 @@ method gravity($point) {
 
 method move( $dst, $src ) {
     # TODO must animate the falling. notify $io somehow?
-    my $obj = $world->[ $src->[0] ][ $src->[1] ];
+    my $obj = $level_map->[ $src->[YY] ][ $src->[XX] ];
     # TODO need way to "put back" non-EMPTY things that yet can be
     # walked over by monsters
-    $world->[ $src->[0] ][ $src->[1] ] = OBJ_EMPTY;
-    $world->[ $dst->[0] ][ $dst->[1] ] = $obj;
-    $dirty                             = 1;
+    $level_map->[ $src->[YY] ][ $src->[XX] ] = OBJ_EMPTY;
+    $level_map->[ $dst->[YY] ][ $dst->[XX] ] = $obj;
+    $dirty                                   = 1;
 }
 
 # TODO may want interactions, like if a resource falls onto player
 # that's like picking it up...
 method move_okay( $dst, $src, $direction ) {
     my ( $ret, $point );
-    my $obj = $world->[ $dst->[0] ][ $dst->[1] ];
+    my $obj = $level_map->[ $dst->[YY] ][ $dst->[XX] ];
     match( $obj : == ) {
         case (OBJ_EMPTY) { $ret = 1 }
         case (OBJ_PLAYER), case (OBJ_WALL), case (OBJ_DOOR), case (OBJ_CELL) { }
         case (OBJ_THINGY) {
             # can it be pushed?
-            my @newp = point_to_the( $dst, $direction );
-            my ($ok) = $self->move_okay( \@newp, $dst, $direction );
+            my @newpoint = point_to_the( $dst, $direction );
+            my ($ok) = $self->move_okay( \@newpoint, $dst, $direction );
             if ($ok) {
-                $self->move( \@newp, $dst );
-                ( $ret, $point ) = ( $ok, \@newp );
+                $self->move( \@newpoint, $dst );
+                ( $ret, $point ) = ( $ok, \@newpoint );
             } else {
-                if ( $world->[ $src->[0] ][ $src->[1] ] == OBJ_PLAYER ) {
+                if ( $level_map->[ $src->[YY] ][ $src->[XX] ] == OBJ_PLAYER ) {
                     # TODO increase score or put in player inventory
                     ( $ret, $point ) = ( 1, undef );
                 } else {
@@ -171,15 +182,15 @@ method run {
 # SUBROUTINES
 
 sub point_to_the ( $point, $direction ) {
-    my @newp = $point->@*;
+    my @newpoint = $point->@*;
     match( $direction : == ) {
-        case (DIRECTION_EAST)  { $newp[1] = ++$newp[1] % WORLD_COLS }
-        case (DIRECTION_NORTH) { $newp[0] = --$newp[0] % WORLD_ROWS }
-        case (DIRECTION_WEST)  { $newp[1] = --$newp[1] % WORLD_COLS }
-        case (DIRECTION_SOUTH) { $newp[0] = ++$newp[0] % WORLD_ROWS }
+        case (DIRECTION_EAST)  { $newpoint[XX] = ++$newpoint[XX] % WORLD_COLS }
+        case (DIRECTION_NORTH) { $newpoint[YY] = --$newpoint[YY] % WORLD_ROWS }
+        case (DIRECTION_WEST)  { $newpoint[XX] = --$newpoint[XX] % WORLD_COLS }
+        case (DIRECTION_SOUTH) { $newpoint[YY] = ++$newpoint[YY] % WORLD_ROWS }
         default                { die "unknown direction '$direction'" }
     }
-    return @newp;
+    return @newpoint;
 }
 
 sub refresh_delay ($refresh) {

@@ -43,6 +43,21 @@ You can also look for information at:
     https://metacpan.org/release/Game-SuperSokohire3
 
 
+AUTHORING
+
+  ./Build distcheck
+
+  ./Build testcover
+  cover -report compilation | less
+
+  ./Build install
+  supersokohire3
+  ...
+
+  ./Build dist
+  cpan-upload ...
+
+
 LICENSE AND COPYRIGHT
 
 This software is Copyright (c) 2022 by Jeremy Mates.
@@ -50,5 +65,3 @@ This software is Copyright (c) 2022 by Jeremy Mates.
 This is free software, licensed under:
 
   The (three-clause) BSD License
-
-$Id: README,v 1.8 2022/06/03 13:15:34 jmates Exp $
