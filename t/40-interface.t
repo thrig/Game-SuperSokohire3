@@ -1,6 +1,6 @@
 #!perl
 #
-# $Id: 40-interface.t,v 1.1 2022/06/05 01:07:20 jmates Exp $
+# $Id: 40-interface.t,v 1.2 2022/06/14 00:59:43 jmates Exp $
 
 use 5.26.0;
 use Test2::V0;
@@ -30,14 +30,15 @@ my $okay = eval {
 };
 isnt( $okay, 1 );
 is( $@, "gameover\n" );
-is( \%Game::SuperSokohire3::Interface::TestTest123::events,
-    {   boss   => 1,
-        init   => 1,
-        input  => 2,
-        quit   => 1,
-        title  => 1,
-        update => 2,
-    }
-);
+is \%Game::SuperSokohire3::Interface::TestTest123::events,
+  { boss      => 1,
+    input     => 2,
+    inventory => 1,
+    mode      => 1,
+    quit      => 1,
+    title     => 1,
+    update    => 3,
+    init      => 1,
+  };
 
 done_testing;

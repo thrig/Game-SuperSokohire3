@@ -1,6 +1,6 @@
 # -*- Perl -*-
 #
-# $Id: TestTest123.pm,v 1.1 2022/06/05 01:07:20 jmates Exp $
+# $Id: TestTest123.pm,v 1.2 2022/06/14 00:59:43 jmates Exp $
 #
 # while not a real interface it does increase code coverage and provides
 # some other benefits
@@ -19,11 +19,6 @@ method boss {
     return $self;
 }
 
-method update($game) {
-    $events{update}++;
-    return $self;
-}
-
 method init {
     $events{init}++;
     return $self;
@@ -34,13 +29,28 @@ method input {
     return $ifn->();
 }
 
+method inventory($i) {
+    $events{inventory}++;
+    return $self;
+}
+
 method quit {
     $events{quit}++;
     die "gameover\n";    # KLUGE avoid subsequent exit 1 in caller
 }
 
+method showmode($m) {
+    $events{mode}++;
+    return $self;
+}
+
 method title_screen {
     $events{title}++;
+    return $self;
+}
+
+method update($game) {
+    $events{update}++;
     return $self;
 }
 

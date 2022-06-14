@@ -1,6 +1,6 @@
 # -*- Perl -*-
 #
-# $Id: SuperSokohire3.pm,v 1.18 2022/06/05 06:21:45 jmates Exp $
+# $Id: SuperSokohire3.pm,v 1.19 2022/06/14 00:59:43 jmates Exp $
 #
 # the game logic, player code, etc
 
@@ -11,22 +11,34 @@ class Game::SuperSokohire3 :strict(params);
 use Game::SuperSokohire3::Common;
 use Game::SuperSokohire3::Random 'init_jsf';
 use Game::SuperSokohire3::World;
-use Syntax::Keyword::Match 0.08 qw(match :experimental(dispatch));
+use Syntax::Keyword::Match 0.08 qw(match);
 use Time::HiRes 1.77 qw(CLOCK_MONOTONIC clock_gettime sleep);
+
+use constant {
+    MOVE_NOPE => 0,
+    MOVE_OKAY => 1,
+};
 
 has $delay_seconds :param;
 has $io            :param;
 has $seed          :param;
 
-has $dirty   = 1;
-has $gravity = DIRECTION_SOUTH;
 # y,x coordinate for player
-has @hero :reader;
+has @hero;
+# inventory is a FIFO queue
+has $inventory :reader = [];
+# is the player moving, attacking, etc? a method reference
+has $mode;
+
+# level map is a pointer to something in $world
 has $level_map :reader;
 has $world = [];
 
 ADJUST {
     init_jsf($seed);
+
+    $mode = \&maybe_move_or_also_push;
+
     # this should happen before game_loop, and not here!
     $world     = Game::SuperSokohire3::World::generate( $world, 1 );
     $level_map = $world->[0];
@@ -53,123 +65,209 @@ ADJUST {
 #
 # METHODS
 
-method affect($point) {
-    # fall due to gravity. objects might also activate in other ways?
-    while ( defined( my $direction = $self->gravity($point) ) ) {
-        my @newpoint = point_to_the( $point, $direction );
-        last unless $self->fallable( \@newpoint );
-        $self->move( \@newpoint, $point );
-        $point = \@newpoint;
-    }
-}
-
-method fallable($point) {
-    match( $level_map->[ $point->[YY] ][ $point->[XX] ] : == ) {
-        case (OBJ_EMPTY) { 1 }
-        default          { 0 }
-    }
-}
-
 method game_loop {
+    # only show these as they become relevant in the game?
+    $io->showmode(INPUT_MOVE);
+    $io->inventory($inventory);
+    $io->update($self);
+
     while (1) {
-        my ( $direction, @newpoint );
-        my $input = $io->input;
-        match( $input : == ) {
-            case (INPUT_NOOP) { }
-            case (INPUT_MOVE_E) {
-                $direction = DIRECTION_EAST;
-                @newpoint  = ( $hero[YY], ( $hero[XX] + 1 ) % WORLD_COLS );
+        my $input  = $io->input;    # maybe non-blocking, therefore NOPE
+        my $result = do {
+            match( $input : == ) {
+                case (INPUT_NOPE) { MOVE_NOPE }
+
+                # directionals -- 4way 4life
+                case (INPUT_MOVE_E) {
+                    $self->$mode( [ $hero[YY], ( $hero[XX] + 1 ) % WORLD_COLS ],
+                        \@hero, DIRECTION_EAST );
+                }
+                case (INPUT_MOVE_N) {
+                    $self->$mode( [ ( $hero[YY] - 1 ) % WORLD_ROWS, $hero[XX] ],
+                        \@hero, DIRECTION_NORTH );
+                }
+                case (INPUT_MOVE_W) {
+                    $self->$mode( [ $hero[YY], ( $hero[XX] - 1 ) % WORLD_COLS ],
+                        \@hero, DIRECTION_WEST );
+                }
+                case (INPUT_MOVE_S) {
+                    $self->$mode( [ ( $hero[YY] + 1 ) % WORLD_ROWS, $hero[XX] ],
+                        \@hero, DIRECTION_SOUTH );
+                }
+
+                # modes
+                case (INPUT_ATTACK) {
+                    $mode = \&maybe_attack;
+                    $io->showmode(INPUT_ATTACK);
+                    MOVE_NOPE;
+                }
+                case (INPUT_DROP) {
+                    if (@$inventory) {
+                        $mode = \&maybe_drop;
+                        $io->showmode(INPUT_DROP);
+                    } else {
+                        # TODO message here about nothing to drop
+                    }
+                    MOVE_NOPE;
+                }
+                case (INPUT_GET) {
+                    if ( @$inventory < INVENTORY_MAX ) {
+                        $mode = \&maybe_get;
+                        $io->showmode(INPUT_GET);
+                    } else {
+                        # TODO canna pickup any more
+                    }
+                    MOVE_NOPE;
+                }
+                case (INPUT_MOVE) {
+                    $mode = \&maybe_move_or_also_push;
+                    $io->showmode(INPUT_MOVE);
+                    MOVE_NOPE;
+                }
+
+                # inventory handling (this ain't rogue)
+                case (INPUT_ROT) {
+                    if ( @$inventory >= 3 ) {
+                        unshift @$inventory, splice @$inventory, 2, 1;
+                        $io->inventory($inventory);
+                        MOVE_OKAY;
+                    } else {
+                        # TODO underflow message
+                        MOVE_NOPE;
+                    }
+                }
+                case (INPUT_SWAP) {
+                    if ( @$inventory >= 2 ) {
+                        @$inventory[ 0, 1 ] = @$inventory[ 1, 0 ];
+                        $io->inventory($inventory);
+                        MOVE_OKAY;
+                    } else {
+                        # TODO underflow message
+                        MOVE_NOPE;
+                    }
+                }
+                case (INPUT_TOR) {    # -ROT
+                    if ( @$inventory >= 3 ) {
+                        splice @$inventory, 2, 0, shift @$inventory;
+                        $io->inventory($inventory);
+                        MOVE_OKAY;
+                    } else {
+                        # TODO underflow message
+                        MOVE_NOPE;
+                    }
+                }
+
+                # special keys
+                case (INPUT_BOSS) { $io->boss; MOVE_NOPE }
+                case (INPUT_QUIT) { $io->quit; exit 1 }
+                default {
+                    warn "unknown input '$input' ??\n";
+                    MOVE_NOPE;
+                }
             }
-            case (INPUT_MOVE_N) {
-                $direction = DIRECTION_NORTH;
-                @newpoint  = ( ( $hero[YY] - 1 ) % WORLD_ROWS, $hero[XX] );
-            }
-            case (INPUT_MOVE_W) {
-                $direction = DIRECTION_WEST;
-                @newpoint  = ( $hero[YY], ( $hero[XX] - 1 ) % WORLD_COLS );
-            }
-            case (INPUT_MOVE_S) {
-                $direction = DIRECTION_SOUTH;
-                @newpoint  = ( ( $hero[YY] + 1 ) % WORLD_ROWS, $hero[XX] );
-            }
-            case (INPUT_BOSS) { $io->boss; $dirty = 1 }
-            case (INPUT_QUIT) { $io->quit; exit 1 }
-            default           { warn "unknown input '$input' ??\n" }
+        };
+        die "bad result for $input\n" unless defined $result;    # DBG
+        if ( $result == MOVE_OKAY ) {
+            # monsters and what need to advance here. there's no energy
+            # system so everything moves in lockstep by default
+            #for my $obj (@$inventory) {
+            #}
         }
-        if (@newpoint) {
-            my ( $ok, $point ) = $self->move_okay( \@newpoint, \@hero, $direction );
-            if ($ok) {
-                $self->move( \@newpoint, \@hero );
-                @hero = @newpoint;
-            }
-            # player touching objects (or certain locations) causes them
-            # to activate
-            $self->affect($point) if $point;
-        }
-        # TODO may also need a world update somewhere, maybe here
-        if ($dirty) {
-            $io->update($self);
-            $dirty = 0;
-        }
+        $io->update($self);
         refresh_delay($delay_seconds);
     }
 }
 
-method gravity($point) {
-    match( $gravity : == ) {
-        case (DIRECTION_EAST) {
-            $point->[XX] < WORLD_COLS - 1 ? DIRECTION_EAST : undef;
-        }
-        case (DIRECTION_NORTH) {
-            $point->[YY] > 0 ? DIRECTION_NORTH : undef
-        }
-        case (DIRECTION_WEST) {
-            $point->[XX] > 0 ? DIRECTION_WEST : undef;
-        }
-        case (DIRECTION_SOUTH) {
-            $point->[YY] < WORLD_ROWS - 1 ? DIRECTION_SOUTH : undef;
-        }
-        default { die "unknown gravity '$gravity'" }
-    }
-}
-
-method move( $dst, $src ) {
-    # TODO must animate the falling. notify $io somehow?
-    my $obj = $level_map->[ $src->[YY] ][ $src->[XX] ];
-    # TODO need way to "put back" non-EMPTY things that yet can be
-    # walked over by monsters
-    $level_map->[ $src->[YY] ][ $src->[XX] ] = OBJ_EMPTY;
-    $level_map->[ $dst->[YY] ][ $dst->[XX] ] = $obj;
-    $dirty                                   = 1;
-}
-
-# TODO may want interactions, like if a resource falls onto player
-# that's like picking it up...
-method move_okay( $dst, $src, $direction ) {
-    my ( $ret, $point );
+method maybe_attack( $dst, $src, $direction ) {
     my $obj = $level_map->[ $dst->[YY] ][ $dst->[XX] ];
     match( $obj : == ) {
-        case (OBJ_EMPTY) { $ret = 1 }
-        case (OBJ_PLAYER), case (OBJ_WALL), case (OBJ_DOOR), case (OBJ_CELL) { }
-        case (OBJ_THINGY) {
-            # can it be pushed?
-            my @newpoint = point_to_the( $dst, $direction );
-            my ($ok) = $self->move_okay( \@newpoint, $dst, $direction );
-            if ($ok) {
-                $self->move( \@newpoint, $dst );
-                ( $ret, $point ) = ( $ok, \@newpoint );
-            } else {
-                if ( $level_map->[ $src->[YY] ][ $src->[XX] ] == OBJ_PLAYER ) {
-                    # TODO increase score or put in player inventory
-                    ( $ret, $point ) = ( 1, undef );
-                } else {
-                    ( $ret, $point ) = ( 0, $dst );
-                }
-            }
-        }
-        default { die "unknown map object '$obj' at @$dst" }
+        case (OBJ_EMPTY) { MOVE_NOPE }
+        # TODO need monsters to thwack, eventually
+        default { MOVE_NOPE }
     }
-    return $ret, $point;
+}
+
+method maybe_drop( $dst, $src, $direction ) {
+    unless (@$inventory) {
+        # TODO message here
+        $mode = \&maybe_move_or_also_push;
+        return MOVE_NOPE;
+    }
+    my $obj = $level_map->[ $dst->[YY] ][ $dst->[XX] ];
+    match( $obj : == ) {
+        case (OBJ_EMPTY) {
+            $level_map->[ $dst->[YY] ][ $dst->[XX] ] = shift @$inventory;
+            $mode = \&maybe_move_or_also_push unless @$inventory;
+            $io->inventory($inventory);
+            MOVE_OKAY;
+        }
+        # TODO cells will need to be drop-able
+        default { MOVE_NOPE }
+    }
+}
+
+method maybe_get( $dst, $src, $direction ) {
+    if ( @$inventory >= INVENTORY_MAX ) {
+        # TODO message about fullness here
+        $mode = \&maybe_move_or_also_push;
+        return MOVE_NOPE;
+    }
+    my $obj = $level_map->[ $dst->[YY] ][ $dst->[XX] ];
+    match( $obj : == ) {
+        case (OBJ_THINGY) {
+            unshift @$inventory, OBJ_THINGY;
+            $level_map->[ $dst->[YY] ][ $dst->[XX] ] = OBJ_EMPTY;
+            $io->inventory($inventory);
+            MOVE_OKAY;
+        }
+        default { MOVE_NOPE }
+    }
+}
+
+method maybe_move_or_also_push( $dst, $src, $direction ) {
+    my @cur    = @$dst;
+    my @points = ($src);
+  POINT: while (1) {
+        my $obj = $level_map->[ $cur[YY] ][ $cur[XX] ];
+        match( $obj : == ) {
+            case (OBJ_EMPTY) {
+                unshift @points, \@cur;
+                last POINT;
+            }
+            case (OBJ_CELL), case (OBJ_VOID), case (OBJ_WALL) {
+                return MOVE_NOPE;
+            }
+            case (OBJ_STAIRDOWN), case (OBJ_STAIRUP) {
+                # maybe this could be possible if there's a graph to
+                # follow to the next level, but we'll assume there's one
+                # of those fire guards that blocks a shove
+                return MOVE_NOPE if @points > 1;
+                die "todo follow stairs\n";
+            }
+            case (OBJ_DOOR) {
+                # in theory a player with a key might be able to open
+                # the door they are pushed into by something else, but
+                # we ignore that (or they're too busy getting pushed
+                # into to deal with anything about the door)
+                return MOVE_NOPE if @points > 1;
+                die "todo try open door\n";
+            }
+            case (OBJ_PLAYER), case (OBJ_THINGY) {
+                unshift @points, \@cur;
+                @cur = point_to_the( \@cur, $direction );
+            }
+            case (OBJ_UNSEEN) { return MOVE_NOPE }                # DBG
+            default           { die "unknown map object $obj" }
+        }
+    }
+    for my $i ( 0 .. $#points - 1 ) {    # final point is first
+        $level_map->[ $points[$i][YY] ][ $points[$i][XX] ] =
+          $level_map->[ $points[ $i + 1 ][YY] ][ $points[ $i + 1 ][XX] ];
+    }
+    $level_map->[ $src->[YY] ][ $src->[XX] ] = OBJ_EMPTY;
+
+    @$src = @$dst;
+    return MOVE_OKAY;
 }
 
 method run {

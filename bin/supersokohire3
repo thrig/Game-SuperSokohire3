@@ -1,18 +1,22 @@
 #!perl
 # supersokohire3 - launcher for Game::SuperSokohire3
 #
-# $Id: supersokohire3,v 1.7 2022/06/05 01:07:20 jmates Exp $
+# $Id: supersokohire3,v 1.8 2022/06/14 00:55:07 jmates Exp $
 
 use Game::SuperSokohire3;
 use Game::SuperSokohire3::Interface::Curses;
 use Getopt::Long 'GetOptions';
 
+die "supersokohire3: stdout is not to a terminal\n" unless -t *STDOUT;
+
 $0 = 'supersokohire3';    # some OS may not honor this
-my $delay = 0.25;         # DBG is too high
-my $seed  = time;         # https://flak.tedunangst.com/post/random-in-the-wild
+my $delay   = 0.25;       # DBG is too high (but is ignored with --fast set)
+my $nodelay = 1;
+my $seed    = time;       # https://flak.tedunangst.com/post/random-in-the-wild
 
 GetOptions(
     'delay=f'   => \$delay,
+    fast        => sub { $nodelay = 0; $ENV{ESCTIME} = 1 },
     'seed=i'    => \$seed,
     'version|v' => sub { say $Game::SuperSokohire3::VERSION; exit 1 }
 ) or exit 1;
@@ -28,8 +32,8 @@ warn "-- DBG seed ", $seed, "\n";
 
 Game::SuperSokohire3->new(
     delay_seconds => $delay,
-    io            => Game::SuperSokohire3::Interface::Curses->new,
-    seed          => $seed,
+    io   => Game::SuperSokohire3::Interface::Curses->new( nodelay => $nodelay ),
+    seed => $seed,
 )->run;
 
 __END__
@@ -40,7 +44,7 @@ B<supersokohire3>
 
 =head1 SYNOPSIS
 
-  supersokohire3 [--seed=uint32]
+  supersokohire3 [--fast] [--seed=uint32]
 
 =head1 DESCRIPTION
 
@@ -70,7 +74,7 @@ game is won.
 
 =head1 SEE ALSO
 
-L<Game::Xomb>
+L<Game::Xomb>, L<rogue(6)>
 
 =head1 COPYRIGHT & LICENSE
 

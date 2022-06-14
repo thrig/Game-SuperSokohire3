@@ -1,17 +1,22 @@
 # -*- Perl -*-
 #
-# $Id: Curses.pm,v 1.17 2022/06/05 13:22:17 jmates Exp $
+# $Id: Curses.pm,v 1.18 2022/06/14 00:59:43 jmates Exp $
 #
 # a Curses-based interface for Game::SuperSokohire3
 
 package Game::SuperSokohire3::Interface::Curses 0.02;
 use Object::Pad 0.52;
 
-class Game::SuperSokohire3::Interface::Curses;
+class Game::SuperSokohire3::Interface::Curses :strict(params);
 use Curses;
 use Game::SuperSokohire3::Common;
+use Syntax::Keyword::Match 0.08 qw(match);
 
 use constant {
+    # statuslineplacements for statusbar
+    MODE_OFFSET      => 0,
+    INVENTORY_OFFSET => 12,
+
     # PAIRS of colors (the Lojban prefix is to hopefully avoid name
     # clashes with Curses or similar)
     REMEI_WHITE  => 1,
@@ -42,33 +47,43 @@ use constant {
 
 our $bosswin;
 
-our %ch_inputs = (    # regular keyboard keys (see Curses getchar docs)
+our %ch_inputs = (    # regular keys (see Curses getchar docs)
     B => INPUT_BOSS,
     q => INPUT_QUIT,
+    # directionals
     h => INPUT_MOVE_W,
     j => INPUT_MOVE_S,
     k => INPUT_MOVE_N,
     l => INPUT_MOVE_E,
+    # modes
+    f => INPUT_ATTACK,
+    d => INPUT_DROP,
+    g => INPUT_GET,
+    m => INPUT_MOVE,
+    # cancel to default mode like vi(1)
+    "\e" => INPUT_MOVE,
+    # forthlike words for inventory management (or forthlite?)
+    r   => INPUT_ROT,
+    s   => INPUT_SWAP,
+    '-' => INPUT_TOR,    # -ROT
 );
 
-our %key_inputs = (    # extended keys (mostly untested)
+our %key_inputs = (      # extended keys (mostly untested)
     260 => INPUT_MOVE_W,
     258 => INPUT_MOVE_S,
     259 => INPUT_MOVE_N,
     261 => INPUT_MOVE_E,
 );
 
-has $fancy_colors = 0;
-has $map;              # WINDOW* to the $world
-has %obj2ch;           # $world object to chtype mapping
+our %obj2ch;             # $world object to chtype mapping
 
+our %boring = (
+    OBJ_EMPTY, '.', OBJ_PLAYER,    '@', OBJ_THINGY,  'x',
+    OBJ_WALL,  '#', OBJ_CELL,      '_', OBJ_DOOR,    '+',
+    OBJ_VOID,  ' ', OBJ_STAIRDOWN, '>', OBJ_STAIRUP, '<',
+);
 # ascii(7) decimals are used to help Curses see an IV instead of a PV
 # and therefore create the correct chtype. sorry, eh?
-our %boring = (
-    OBJ_EMPTY, 46, OBJ_PLAYER,    64, OBJ_THINGY,  120,
-    OBJ_WALL,  35, OBJ_CELL,      95, OBJ_DOOR,    43,
-    OBJ_VOID,  32, OBJ_STAIRDOWN, 62, OBJ_STAIRUP, 60,
-);
 our %fancy = (
     OBJ_EMPTY,     46 | COLOR_PAIR(REMEI_GREY3),
     OBJ_PLAYER,    64 | A_BOLD | COLOR_PAIR(REMEI_GREEN),
@@ -80,42 +95,67 @@ our %fancy = (
     OBJ_STAIRDOWN, 62 | COLOR_PAIR(REMEI_WHITE),
     OBJ_STAIRUP,   60 | COLOR_PAIR(REMEI_WHITE),
 );
+our $fancy_colors = 0;
+
+# see also the statuslineplacements
+our ( $messagebar, $map, $statusbar );
+
+# set to 0 to make Curses block on key input
+has $nodelay :param = 1;
 
 ########################################################################
 #
 # METHODS
 
+# I recall that some Apple //e games had a boss screen that would bring
+# up a spreadsheet or something so you could quickly look like you were
+# actually working at work. This method is perhaps less effective given
+# the creepy corporate tracking tools that are available these days.
+method boss {
+    touchwin($bosswin);
+    curs_set(1);
+    nodelay(0);
+    getchar($bosswin);
+    nodelay($nodelay);
+    curs_set(0);
+    return $self;
+}
+
 method init {
+    # default is 1000 milliseconds which is perhaps too long unless you
+    # actually want to use the keypad and are on a 300 baud line
+    $ENV{ESCDELAY} = 100 unless exists $ENV{ESCDELAY};
+
     initscr;
     start_color;
     if ( can_change_color and $COLORS >= 256 ) {
         setup_curses_colors();
-        %obj2ch       = %fancy;
+        *obj2ch       = \%fancy;
         $fancy_colors = 1;
     } else {
-        %obj2ch = %boring;
+        *obj2ch = \%boring;
     }
     # DBG have we probably mapped everything?
     if ( keys %obj2ch != MAX_OBJECT ) {
         die "error: possibly unhandled objects (fancy=$fancy_colors)\n";
     }
 
-    # disable window resizes: lock $COLS and $LINES to whatever is set
-    # just before this handler is added
+    # lock the screen size (raw also disables the signals)
     $SIG{WINCH} = 'IGNORE';
-    # TODO check that window big enough... err how big is that?
+    die "supersokohire3: terminal must be 80x24\n" if $LINES < 24 or $COLS < 80;
 
+    raw;
     curs_set(0);
-    noecho;
-    leaveok( $stdscr, 1 );
     keypad(1);    # I guess some people actually have and use this
+    noecho;
 
-    $map = newwin( WORLD_ROWS, WORLD_COLS, 1, 1 );
-    leaveok( $map, 1 );
+    $messagebar = subwin( 1,          $COLS,      0,          0 );
+    $map        = subwin( WORLD_ROWS, WORLD_COLS, 1,          1 );
+    $statusbar  = subwin( 1,          $COLS,      $LINES - 1, 0 );
+    leaveok( $_, 1 ) for $stdscr, $messagebar, $map, $statusbar;
 
-    $bosswin = newwin( $LINES, $COLS, 0, 0 );
-    move( $bosswin, 0, 0 );
-    addstring( $bosswin, <<'EOS');
+    $bosswin = newwin( 0, 0, 0, 0 );
+    addstring( $bosswin, 0, 0, <<'EOS');
     they not speak?
     Will not the Mayor then and his brethren come?
   BUCKINGHAM. The Mayor is here at hand. Intend some fear;
@@ -140,46 +180,48 @@ method init {
 
     Now, Catesby, what says your lord to my request?
 EOS
-    addstring( $bosswin, ':' );
+    addstring( $bosswin, $LINES - 1, 0, ':' );
 
     return $self;
 }
 
 method input {
-    my ( $ch, $key ) = getchar;
+    my ( $ch, $key ) = getchar($map);
     if ( defined $key ) {
-        return $key_inputs{$key} // INPUT_NOOP;
+        return $key_inputs{$key} // INPUT_NOPE;
     } elsif ( defined $ch ) {
-        return $ch_inputs{$ch} // INPUT_NOOP;
+        return $ch_inputs{$ch} // INPUT_NOPE;
     }
-    return INPUT_NOOP;
+    return INPUT_NOPE;
 }
 
-END { endwin }
-method quit { endwin }
+# TODO not sure if this needs '.' or something for unfilled inventory
+# slots or [] braces around it or what. if ' ' are ok for unset slots
+# then can simplify to only print the defined inventory elements
+method inventory($inv) {
+    addstring $statusbar, 0, INVENTORY_OFFSET, join '', map {
+        $_ = $inv->[$_];
+        $_ ? $obj2ch{$_} : ' '
+    } 0 .. INVENTORY_MAX - 1;
+}
 
-# I recall that some Apple //e games had a boss screen that would bring
-# up a spreadsheet or something so you could quickly look like you were
-# actually working at work. This method is perhaps less effective given
-# the creepy corporate tracking tools that are available these days.
-method boss {
-    curs_set(1);
-    nodelay(0);
-    refresh($bosswin);
-    getchar;
-    curs_set(0);
-    nodelay(1);
-    touchwin($map);
-    touchwin;
-    noutrefresh($map);
-    noutrefresh;
-    doupdate;
-    return $self;
+method quit { move( $LINES - 1, 0 ); endwin; say "Be seeing you..." }
+END { endwin }
+
+method showmode($mode) {
+    addstring $statusbar, 0, MODE_OFFSET, do {
+        match( $mode : == ) {
+            case (INPUT_MOVE)   { "          " }
+            case (INPUT_ATTACK) { "--ATTACK--" }
+            case (INPUT_GET)    { "--GET--   " }
+            case (INPUT_DROP)   { "--DROP--  " }
+            default             { die "unknown showmode '$mode'" }
+        }
+    };
 }
 
 method title_screen {
-    erase;
-    nodelay(0);
+    clear;
     my $offset = int( $LINES / 4 );
     attron( COLOR_PAIR(REMEI_WHITE) ) if $fancy_colors;
     attron(A_BOLD);
@@ -187,13 +229,14 @@ method title_screen {
     attroff(A_BOLD);
     emit_center( "-- Press any key --", $offset * 3 );
     attroff( COLOR_PAIR(REMEI_WHITE) ) if $fancy_colors;
+    nodelay(0);
     getchar;
-    erase;
-    nodelay(1);
+    nodelay($nodelay);
     return $self;
 }
 
 method update($game) {
+    touchwin;
     my $level_map = $game->level_map;
     for my $row ( 0 .. WORLD_ROWS - 1 ) {
         for my $col ( 0 .. WORLD_COLS - 1 ) {
@@ -201,7 +244,10 @@ method update($game) {
             addch( $map, $row, $col, $obj2ch{$obj} // 'Q' );
         }
     }
-    refresh($map);
+    noutrefresh($messagebar);
+    noutrefresh($map);
+    noutrefresh($statusbar);
+    doupdate;
     return $self;
 }
 
