@@ -1,6 +1,6 @@
 #!perl
 #
-# $Id: 20-vaults.t,v 1.3 2022/06/05 06:21:45 jmates Exp $
+# $Id: 20-vaults.t,v 1.4 2022/06/14 21:21:00 jmates Exp $
 
 use 5.26.0;
 use Test2::V0;
@@ -39,8 +39,7 @@ is( $new, [ [ 4, 1 ], [ 5, 2 ], [ 6, 3 ] ] );
 is( $yy,  \@orig );
 
 init_jsf(0);
-my ( $grid, $rows, $cols, $start ) =
-  Game::SuperSokohire3::Vaults::create('stairdoor');
+my ( $grid, $rows, $cols, $start ) = make_vault('stairdoor');
 # these be index, not array size
 is( [ $rows, $cols ], [ 2, 2 ] );
 

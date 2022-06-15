@@ -1,6 +1,6 @@
 # -*- Perl -*-
 #
-# $Id: SuperSokohire3.pm,v 1.19 2022/06/14 00:59:43 jmates Exp $
+# $Id: SuperSokohire3.pm,v 1.21 2022/06/14 21:41:32 jmates Exp $
 #
 # the game logic, player code, etc
 
@@ -9,10 +9,10 @@ use Object::Pad 0.52;
 
 class Game::SuperSokohire3 :strict(params);
 use Game::SuperSokohire3::Common;
-use Game::SuperSokohire3::Random 'init_jsf';
+use Game::SuperSokohire3::Random qw(init_jsf irand);
 use Game::SuperSokohire3::World;
 use Syntax::Keyword::Match 0.08 qw(match);
-use Time::HiRes 1.77 qw(CLOCK_MONOTONIC clock_gettime sleep);
+use Time::HiRes 1.77            qw(CLOCK_MONOTONIC clock_gettime sleep);
 
 use constant {
     MOVE_NOPE => 0,
@@ -24,23 +24,27 @@ has $io            :param;
 has $seed          :param;
 
 # y,x coordinate for player
-has @hero;
+has $hero :mutator;
 # inventory is a FIFO queue
 has $inventory :reader = [];
 # is the player moving, attacking, etc? a method reference
 has $mode;
 
-# level map is a pointer to something in $world
+# features is where code to handle things like stairs hides. level map
+# is a pointer to something in $world, hopefully with zlevel being the
+# correct index of that level_map in world
+has $features = {};
 has $level_map :reader;
-has $world = [];
+has $world  = [];
+has $zlevel = 0;
 
 ADJUST {
     init_jsf($seed);
 
     $mode = \&maybe_move_or_also_push;
 
-    # this should happen before game_loop, and not here!
-    $world     = Game::SuperSokohire3::World::generate( $world, 1 );
+    # this should happen before game_loop, and not here?
+    Game::SuperSokohire3::World::generate( $self, $world, 1, $features );
     $level_map = $world->[0];
     if (0) {
         for my $row ( 0 .. WORLD_ROWS - 1 ) {
@@ -56,9 +60,9 @@ ADJUST {
         $level_map->[9][10] = OBJ_VOID;
         $level_map->[9][11] = OBJ_STAIRUP;
         $level_map->[9][12] = OBJ_STAIRDOWN;
+        @$hero = ( 5, 5 );
+        $level_map->[ $hero->[YY] ][ $hero->[XX] ] = OBJ_PLAYER;
     }
-    @hero = ( 5, 5 );
-    $level_map->[ $hero[YY] ][ $hero[XX] ] = OBJ_PLAYER;
 }
 
 ########################################################################
@@ -78,21 +82,28 @@ method game_loop {
                 case (INPUT_NOPE) { MOVE_NOPE }
 
                 # directionals -- 4way 4life
+                # NOTE wrap-around on the level map will not make sense
+                # with FOV, or would require that the "camera" follow
+                # the player around so they can see things on the other
+                # side of the map that are right next to them (or FOV
+                # would need to look and show the opposite side of the
+                # map, but it's hard for me to line up a column or row
+                # that far off)
                 case (INPUT_MOVE_E) {
-                    $self->$mode( [ $hero[YY], ( $hero[XX] + 1 ) % WORLD_COLS ],
-                        \@hero, DIRECTION_EAST );
+                    $self->$mode( [ $hero->[YY], ( $hero->[XX] + 1 ) % WORLD_COLS ],
+                        $hero, DIRECTION_EAST );
                 }
                 case (INPUT_MOVE_N) {
-                    $self->$mode( [ ( $hero[YY] - 1 ) % WORLD_ROWS, $hero[XX] ],
-                        \@hero, DIRECTION_NORTH );
+                    $self->$mode( [ ( $hero->[YY] - 1 ) % WORLD_ROWS, $hero->[XX] ],
+                        $hero, DIRECTION_NORTH );
                 }
                 case (INPUT_MOVE_W) {
-                    $self->$mode( [ $hero[YY], ( $hero[XX] - 1 ) % WORLD_COLS ],
-                        \@hero, DIRECTION_WEST );
+                    $self->$mode( [ $hero->[YY], ( $hero->[XX] - 1 ) % WORLD_COLS ],
+                        $hero, DIRECTION_WEST );
                 }
                 case (INPUT_MOVE_S) {
-                    $self->$mode( [ ( $hero[YY] + 1 ) % WORLD_ROWS, $hero[XX] ],
-                        \@hero, DIRECTION_SOUTH );
+                    $self->$mode( [ ( $hero->[YY] + 1 ) % WORLD_ROWS, $hero->[XX] ],
+                        $hero, DIRECTION_SOUTH );
                 }
 
                 # modes
@@ -242,13 +253,26 @@ method maybe_move_or_also_push( $dst, $src, $direction ) {
                 # follow to the next level, but we'll assume there's one
                 # of those fire guards that blocks a shove
                 return MOVE_NOPE if @points > 1;
-                die "todo follow stairs\n";
+                my $fkey = join '.', @cur, $zlevel;
+                if (exists $features->{$fkey}) {
+                    my $method = $features->{$fkey}; 
+                    $self->$method();
+                    # non-victory stairs will doubtless need to adjust
+                    # $zlevel somewhere, put OBJ_EMPTY into the src
+                    # cell, put the hero adjacent to the stair on the
+                    # new level, etc
+                    return MOVE_OKAY;
+                } else {
+                    # bug? or could have false stairs that crumble to
+                    # OBJ_EMPTY when interacted with
+                    die "featureless stair at @cur\n";
+                }
             }
             case (OBJ_DOOR) {
                 # in theory a player with a key might be able to open
                 # the door they are pushed into by something else, but
-                # we ignore that (or they're too busy getting pushed
-                # into to deal with anything about the door)
+                # we ignore that (or they're too busy getting doored to
+                # deal with anything complicated about said door)
                 return MOVE_NOPE if @points > 1;
                 die "todo try open door\n";
             }
@@ -273,6 +297,12 @@ method maybe_move_or_also_push( $dst, $src, $direction ) {
 method run {
     $io->init->title_screen->update($self);
     $self->game_loop;
+}
+
+method victory {
+    $io->quit;
+    printf "Victory! You gain %d Internet certified points.\n", irand( ~0 );
+    exit 0;
 }
 
 ########################################################################

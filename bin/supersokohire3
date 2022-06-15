@@ -1,7 +1,7 @@
 #!perl
 # supersokohire3 - launcher for Game::SuperSokohire3
 #
-# $Id: supersokohire3,v 1.8 2022/06/14 00:55:07 jmates Exp $
+# $Id: supersokohire3,v 1.9 2022/06/14 22:14:55 jmates Exp $
 
 use Game::SuperSokohire3;
 use Game::SuperSokohire3::Interface::Curses;
@@ -23,11 +23,6 @@ GetOptions(
 
 $seed = unpack L => pack L => $seed;    # restrict to 32-bit value
 
-if ( -t *STDERR ) {    # DBG
-    close *STDERR;
-    open *STDERR, '>', "$ENV{HOME}/tmp/log" or exit 42;
-    *STDERR->autoflush(1);
-}
 warn "-- DBG seed ", $seed, "\n";
 
 Game::SuperSokohire3->new(
@@ -44,7 +39,7 @@ B<supersokohire3>
 
 =head1 SYNOPSIS
 
-  supersokohire3 [--fast] [--seed=uint32]
+  supersokohire3 [--fast] [--seed=uint32] 2>log
 
 =head1 DESCRIPTION
 

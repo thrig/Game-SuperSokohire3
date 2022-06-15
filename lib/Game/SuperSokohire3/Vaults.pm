@@ -1,12 +1,16 @@
 # -*- Perl -*-
 #
-# $Id: Vaults.pm,v 1.4 2022/06/05 06:21:45 jmates Exp $
+# $Id: Vaults.pm,v 1.5 2022/06/14 21:21:00 jmates Exp $
 #
 # pre-made vaults and related code for map generation
 
 package Game::SuperSokohire3::Vaults 0.02;
 use Game::SuperSokohire3::Common;
 use Game::SuperSokohire3::Random 'irand';
+
+use parent qw(Exporter);
+our @EXPORT;
+BEGIN { @EXPORT = qw(make_vault) }
 
 # NOTE the open end of a vault or what the player will interact with, if
 # any, should point East, to the right, direction 0. this allows a 180
@@ -15,10 +19,13 @@ use Game::SuperSokohire3::Random 'irand';
 our %vaults = (
     exit => {
         grid => [
-            [ 3, 3, 3, ],
-            [ 3, 7, 5, ],    # this door really needs a lock
-            [ 3, 3, 3, ],
+            [ 3, 5,  3, ],    # these doors really need locks
+            [ 5, 7, 5, ],
+            [ 3, 5,  3, ],
         ],
+        norotate => 1,
+        template => 1,
+        walkable => 1,
     },
     stairdoor => {
         grid => [
@@ -26,7 +33,8 @@ our %vaults = (
             [ 3, -2, 5, ],
             [ 3, 3,  3, ],
         ],
-        template => [ 1, 1 ],
+        template => 1,
+        walkable => 1,
     },
     stairbrogue => {
         grid => [
@@ -34,7 +42,8 @@ our %vaults = (
             [ 3, -2, 0, ],    # 3x3 so it lines up with threethree
             [ 3, 3,  -1, ],
         ],
-        template => [ 1, 1 ],
+        template => 1,
+        walkable => 1,
     },
     threethree => {
         grid => [
@@ -42,6 +51,7 @@ our %vaults = (
             [ 3, 3, 3, ],
             [ 3, 3, 3, ],
         ],
+        norotate => 1,
     },
 );
 
@@ -51,39 +61,42 @@ our @transform = ( \&rot0, \&rot90, \&rot180, \&rot270 );
 
 # potentially walkable, anyways
 our %walkable;
-@walkable{ OBJ_EMPTY, OBJ_CELL, OBJ_DOOR, OBJ_STAIRUP, OBJ_STAIRDOWN, } = ();
+@walkable{ OBJ_EMPTY, OBJ_DOOR, OBJ_STAIRUP, OBJ_STAIRDOWN, } = ();
 
 ########################################################################
 #
 # SUBROUTINES
 
-# get a vault by name, rotate (a copy of it) it randomly, return it and
-# a bunch of metadata for the caller
-sub create ( $name, $template = OBJ_UNSEEN ) {
+# get a vault by name, rotate a copy of it randomly, return that result
+# and a bunch of metadata to the caller
+sub make_vault ($name) {
     die "no such vault '$name'\n" unless exists $vaults{$name};    # DBG
 
-    my $grid = $vaults{$name}{grid};
-    if ( exists $vaults{$name}{template} ) {
-        my ( $y, $x ) = $vaults{$name}{template}->@*;
-        $grid->[$y][$x] = $template;
-    }
-
-    $grid = $transform[ irand(4) ]->($grid);
+    my $vault = $vaults{$name};
+    my $rot   = $vault->{norotate} ? 0 : irand(4);
+    my $grid  = $transform[$rot]->( $vault->{grid} );
     # non-symmetric might get a suitable flip_* here
 
-    my @walk;
     my ( $rows, $cols ) = ( $grid->$#*, $grid->[0]->$#* );
-    for my $y ( 0 .. $rows ) {
-        push @walk, [ $y, 0 ]     if exists $walkable{ $grid->[$y][0] };
-        push @walk, [ $y, $cols ] if exists $walkable{ $grid->[$y][-1] };
-    }
-    if ( $cols > 1 ) {
-        for my $x ( 1 .. $cols - 1 ) {
-            push @walk, [ 0, $x ] if exists $walkable{ $grid->[0][$x] };
-            push @walk, [ $rows, $x ] if exists $walkable{ $grid->[-1][$x] };
+
+    my @walk;
+    if ( $vault->{walkable} ) {
+        for my $y ( 0 .. $rows ) {
+            push @walk, [ $y, 0 ]     if exists $walkable{ $grid->[$y][0] };
+            push @walk, [ $y, $cols ] if exists $walkable{ $grid->[$y][-1] };
+        }
+        if ( $cols > 1 ) {
+            for my $x ( 1 .. $cols - 1 ) {
+                push @walk, [ 0, $x ] if exists $walkable{ $grid->[0][$x] };
+                push @walk, [ $rows, $x ] if exists $walkable{ $grid->[-1][$x] };
+            }
         }
     }
-    return $grid, $rows, $cols, \@walk;
+
+    return $grid, $rows, $cols, \@walk,
+      { rot => $rot,
+        exists $vault->{template} ? ( template => 1 ) : ()
+      };
 }
 
 sub rot0 ($grid) {
