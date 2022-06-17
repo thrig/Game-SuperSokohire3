@@ -1,6 +1,6 @@
 # -*- Perl -*-
 #
-# $Id: World.pm,v 1.6 2022/06/14 21:50:53 jmates Exp $
+# $Id: World.pm,v 1.7 2022/06/17 12:57:58 jmates Exp $
 
 package Game::SuperSokohire3::World 0.02;
 use Game::SuperSokohire3::Common;
@@ -13,10 +13,10 @@ use Syntax::Keyword::Match 0.08 qw(match);
 sub first ( $game, $level_map, $zlevel, $features ) {
     my ( $grid, $rows, $cols, $start, $meta ) = make_vault('exit');
 
-    # this may need more padding to keep it away from the edge of
-    # the map
+    # this may need still more padding to keep it away from the edge
+    # of the map
     my ( $max_row, $max_col ) = ( $level_map->$#*, $level_map->[0]->$#* );
-    my ( $my, $mx ) = random_point( $max_row + 1 - $rows, $max_col + 1 - $cols );
+    my ( $my, $mx ) = random_point( $max_row - $rows - 1, $max_col - $cols - 1 );
     $my += $rows;
     $mx += $cols;
     for my $vy ( 0 .. $rows ) {
@@ -24,10 +24,10 @@ sub first ( $game, $level_map, $zlevel, $features ) {
             my $obj = $grid->[$vy][$vx];
             if ( $obj == OBJ_STAIRUP ) {
                 my $fkey = join '.', $my + $vy, $mx + $vx, $zlevel;
-                $features->{$fkey} = 'victory';
+                $features->{$fkey} = { method => 'victory' };
             } elsif ( $obj == OBJ_DOOR ) {
-                # TODO door handling code... for now DBG open it up
-                $obj = OBJ_EMPTY;
+                my $fkey = join '.', $my + $vy, $mx + $vx, $zlevel;
+                $features->{$fkey} = { method => 'door' };
             }
             $level_map->[ $my + $vy ][ $mx + $vx ] = $obj;
         }

@@ -1,6 +1,6 @@
 # -*- Perl -*-
 #
-# $Id: SuperSokohire3.pm,v 1.21 2022/06/14 21:41:32 jmates Exp $
+# $Id: SuperSokohire3.pm,v 1.22 2022/06/17 12:57:58 jmates Exp $
 #
 # the game logic, player code, etc
 
@@ -9,7 +9,7 @@ use Object::Pad 0.52;
 
 class Game::SuperSokohire3 :strict(params);
 use Game::SuperSokohire3::Common;
-use Game::SuperSokohire3::Random qw(init_jsf irand);
+use Game::SuperSokohire3::Random qw(coinflip init_jsf irand);
 use Game::SuperSokohire3::World;
 use Syntax::Keyword::Match 0.08 qw(match);
 use Time::HiRes 1.77            qw(CLOCK_MONOTONIC clock_gettime sleep);
@@ -53,14 +53,14 @@ ADJUST {
             }
         }
         # DBG test test 1 2 3
-        $level_map->[6][6]  = OBJ_THINGY;
-        $level_map->[7][7]  = OBJ_WALL;
-        $level_map->[8][8]  = OBJ_CELL;
-        $level_map->[9][9]  = OBJ_DOOR;
-        $level_map->[9][10] = OBJ_VOID;
-        $level_map->[9][11] = OBJ_STAIRUP;
-        $level_map->[9][12] = OBJ_STAIRDOWN;
-        @$hero = ( 5, 5 );
+        $level_map->[6][6]                         = OBJ_THINGY;
+        $level_map->[7][7]                         = OBJ_WALL;
+        $level_map->[8][8]                         = OBJ_CELL;
+        $level_map->[9][9]                         = OBJ_DOOR;
+        $level_map->[9][10]                        = OBJ_VOID;
+        $level_map->[9][11]                        = OBJ_STAIRUP;
+        $level_map->[9][12]                        = OBJ_STAIRDOWN;
+        @$hero                                     = ( 5, 5 );
         $level_map->[ $hero->[YY] ][ $hero->[XX] ] = OBJ_PLAYER;
     }
 }
@@ -68,6 +68,13 @@ ADJUST {
 ########################################################################
 #
 # METHODS
+
+# NOTE this might be a monster moving into a door, and we probably don't
+# want them to be able to open doors, or waste time on them trying to do
+# so. also, this erases the door after the player then moves off of it
+method door( $feature, $dst, $src, $direction ) {
+    return coinflip ? MOVE_OKAY : MOVE_NOPE;
+}
 
 method game_loop {
     # only show these as they become relevant in the game?
@@ -254,9 +261,9 @@ method maybe_move_or_also_push( $dst, $src, $direction ) {
                 # of those fire guards that blocks a shove
                 return MOVE_NOPE if @points > 1;
                 my $fkey = join '.', @cur, $zlevel;
-                if (exists $features->{$fkey}) {
-                    my $method = $features->{$fkey}; 
-                    $self->$method();
+                if ( exists $features->{$fkey} ) {
+                    my $method = $features->{$fkey}{method};
+                    $self->$method( $features->{$fkey}, \@cur, $points[-1], $direction );
                     # non-victory stairs will doubtless need to adjust
                     # $zlevel somewhere, put OBJ_EMPTY into the src
                     # cell, put the hero adjacent to the stair on the
@@ -274,7 +281,19 @@ method maybe_move_or_also_push( $dst, $src, $direction ) {
                 # we ignore that (or they're too busy getting doored to
                 # deal with anything complicated about said door)
                 return MOVE_NOPE if @points > 1;
-                die "todo try open door\n";
+                my $fkey = join '.', @cur, $zlevel;
+                if ( exists $features->{$fkey} ) {
+                    my $method = $features->{$fkey}{method};
+                    my $ret = $self->$method( $features->{$fkey}, \@cur, $points[-1], $direction );
+                    if ( $ret == MOVE_OKAY ) {
+                        unshift @points, \@cur;
+                        last POINT;
+                    } else {
+                        return MOVE_NOPE;
+                    }
+                } else {
+                    die "featureless door at @cur\n";
+                }
             }
             case (OBJ_PLAYER), case (OBJ_THINGY) {
                 unshift @points, \@cur;
@@ -299,9 +318,9 @@ method run {
     $self->game_loop;
 }
 
-method victory {
+method victory(@rest) {
     $io->quit;
-    printf "Victory! You gain %d Internet certified points.\n", irand( ~0 );
+    printf "Victory! You gain %d Internet certified points.\n", irand(640);
     exit 0;
 }
 
